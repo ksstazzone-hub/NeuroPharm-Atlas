@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DataSource {
+  PHARMGKB
+  CPIC
+  PHARMVAR
+  FDA_PGX
+  DPWG
+  NCBI_GENE
+  ENSEMBL
+  UNIPROT
+  CLINVAR
+  DBSNP
+  GNOMAD
+  CHEMBL
+  PUBCHEM
+  DGIDB
+  OPEN_TARGETS
+  DRUGBANK
+}
+
+enum AssociationType {
+  PHARMACOKINETIC
+  PHARMACODYNAMIC
+  ADVERSE_EFFECT
+  EXPERIMENTAL
+  OTHER
+}
+
+enum ActionabilityStatus {
+  ACTIONABLE_GUIDELINE
+  CLINICAL_ASSOCIATION
+  RESEARCH_ONLY
+  NOT_ASSESSED
+  CONFLICTING_EVIDENCE
+}
+
+model Gene {
+  id              String        @id @default(cuid())
+  ncbiGeneId      String        @unique
+  hgncId          String?       @unique
+  symbol          String?
+  name            String?
+  description     String?
+  chromosome      String?
+  taxonomyId      Int           @default(9606)
+  source          DataSource    @default(NCBI_GENE)
+  sourceRecordId  String
+  rawRecord       Json?
+  queriedAt       DateTime?
+  sourceUpdatedAt DateTime?
+  variants        VariantGene[]
+  alleles         Allele[]
+  targets         Target[]
+  associations    Association[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([symbol])
+  @@index([name])
+}
+
+model Variant {
+  id                   String        @id @default(cuid())
+  clinVarAccession     String?       @unique
+  dbSnpRsIds           String[]      @default([])
+  ncbiGeneIds          String[]      @default([])
+  geneSymbols          String[]      @default([])
+  title                String?
+  variantType          String?
+  assembly             String?
+  chromosome           String?
+  position             String?
+  referenceAllele      String?
+  alternateAllele      String?
+  clinicalSignificance String?
+  reviewStatus         String?
+  source               DataSource    @default(CLINVAR)
+  sourceRecordId       String
+  rawRecord            Json?
+  queriedAt            DateTime?
+  sourceUpdatedAt      DateTime?
+  genes                VariantGene[]
+  associations         Association[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([title])
+  @@index([dbSnpRsIds], type: Gin)
+  @@index([ncbiGeneIds], type: Gin)
+  @@index([geneSymbols], type: Gin)
+}
+
+model VariantGene {
+  geneId         String
+  variantId      String
+  source         DataSource @default(CLINVAR)
+  sourceRecordId String
+  gene           Gene       @relation(fields: [geneId], references: [id], onDelete: Cascade)
+  variant        Variant    @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@id([geneId, variantId])
+  @@index([source, sourceRecordId])
+}
+
+model Allele {
+  id              String        @id @default(cuid())
+  geneId          String
+  name            String
+  function        String?
+  source          DataSource
+  sourceRecordId  String
+  rawRecord       Json?
+  gene            Gene          @relation(fields: [geneId], references: [id], onDelete: Cascade)
+  associations    Association[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([source, sourceRecordId])
+  @@index([name])
+}
+
+model Phenotype {
+  id              String        @id @default(cuid())
+  name            String
+  source          DataSource
+  sourceRecordId  String
+  rawRecord       Json?
+  associations    Association[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([source, sourceRecordId])
+  @@index([name])
+}
+
+model Drug {
+  id               String        @id @default(cuid())
+  name             String
+  activeIngredient String?
+  source           DataSource
+  sourceRecordId   String
+  identifiers      Json?
+  rawRecord        Json?
+  associations     Association[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([source, sourceRecordId])
+  @@index([name])
+  @@index([activeIngredient])
+}
+
+model Target {
+  id              String        @id @default(cuid())
+  name            String
+  targetType      String?
+  uniprotId       String?       @unique
+  geneId          String?
+  source          DataSource
+  sourceRecordId  String
+  rawRecord       Json?
+  gene            Gene?         @relation(fields: [geneId], references: [id], onDelete: SetNull)
+  associations    Association[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([source, sourceRecordId])
+  @@index([name])
+}
+
+model Association {
+  id              String              @id @default(uuid())
+  geneId          String?
+  variantId       String?
+  alleleId        String?
+  phenotypeId     String?
+  drugId          String?
+  targetId        String?
+  pathology       String?
+  enzyme          String?
+  associationType AssociationType
+  mechanism       String?
+  evidenceLevel   String?
+  actionability   ActionabilityStatus @default(NOT_ASSESSED)
+  source          DataSource
+  sourceRecordId  String
+  publicationId   String?
+  queriedAt       DateTime            @default(now())
+  sourceUpdatedAt DateTime?
+  rawRecord       Json?
+  gene            Gene?               @relation(fields: [geneId], references: [id], onDelete: SetNull)
+  variant         Variant?            @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  allele          Allele?             @relation(fields: [alleleId], references: [id], onDelete: SetNull)
+  phenotype       Phenotype?          @relation(fields: [phenotypeId], references: [id], onDelete: SetNull)
+  drug            Drug?               @relation(fields: [drugId], references: [id], onDelete: SetNull)
+  target          Target?             @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([source, sourceRecordId])
+  @@index([geneId, variantId, drugId])
+  @@index([associationType, actionability])
+  @@index([publicationId])
+  @@index([pathology])
+  @@index([enzyme])
+}
+
+model SearchCache {
+  key       String     @id
+  source    DataSource
+  query     String
+  payload   Json
+  fetchedAt DateTime   @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@index([source, query])
+}
+
+model IngestionRun {
+  id              String     @id @default(uuid())
+  source          DataSource
+  query           String
+  status          String     @default("RUNNING")
+  startedAt       DateTime   @default(now())
+  completedAt     DateTime?
+  recordsFetched  Int        @default(0)
+  recordsUpserted Int        @default(0)
+  error           String?
+
+  @@index([source, startedAt])
+  @@index([status])
+}
